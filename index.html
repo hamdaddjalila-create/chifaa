@@ -1,0 +1,544 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>عيادة الأمان للشفاء الطبي</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--blue:#087e8b;--dark:#123047;--bg:#f3f7fa;--white:#fff;--red:#c0392b}
+*{box-sizing:border-box}
+body{margin:0;font-family:Tahoma,Arial,sans-serif;background:var(--bg);color:#253746}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer;border:0;border-radius:8px;padding:10px 15px;background:var(--blue);color:white}
+button:hover{opacity:.88}
+input,select,textarea{width:100%;padding:11px;border:1px solid #d5e0e7;border-radius:8px;background:#fff;margin-top:5px}
+label{display:block;font-size:14px;margin-bottom:12px}
+h1,h2,h3{margin-top:0}
+.hidden{display:none!important}
+#loginScreen{min-height:100vh;display:grid;place-items:center;padding:20px}
+.login-card{width:100%;max-width:430px;background:white;border-radius:18px;padding:28px;box-shadow:0 8px 35px #12304718}
+.logo{text-align:center;font-size:52px;margin-bottom:10px}
+.muted{color:#718096;font-size:13px;line-height:1.8}
+#app{min-height:100vh}
+header{background:var(--dark);color:white;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header h2{margin:0;font-size:21px}
+.layout{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:calc(100vh - 75px)}
+aside{background:#fff;padding:15px;border-left:1px solid #e5edf2}
+nav button{display:block;width:100%;text-align:right;background:white;color:#30485a;margin-bottom:6px}
+nav button.active,nav button:hover{background:#e5f5f6;color:#087e8b}
+main{padding:22px;min-width:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
+.card,.panel{background:white;border-radius:12px;padding:18px;box-shadow:0 2px 12px #12304708}
+.stat{font-size:28px;color:var(--blue);font-weight:bold;margin-top:8px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px}
+.toolbar input{flex:1;min-width:180px;margin:0}
+.table-wrap{overflow:auto;background:white;border-radius:10px}
+table{width:100%;border-collapse:collapse;min-width:650px}
+th,td{padding:12px;text-align:right;border-bottom:1px solid #e9eef2;font-size:14px}
+th{background:#edf5f7}
+.actions{display:flex;gap:6px}
+.actions button{padding:7px 10px;font-size:12px}
+.danger{background:var(--red)}
+.secondary{background:#64748b}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+#message{margin-top:12px;font-size:14px;line-height:1.8}
+.good{color:#137547}.bad{color:#b42318}
+.small{font-size:12px;color:#718096}
+footer{text-align:center;padding:18px;color:#718096;font-size:12px}
+@media(max-width:700px){
+ .layout{grid-template-columns:1fr}
+ aside{border-left:0;border-bottom:1px solid #ddd;padding:8px}
+ nav{display:flex;overflow:auto;gap:5px}
+ nav button{width:auto;white-space:nowrap;margin:0}
+ main{padding:12px}
+ header{padding:14px}
+}
+@media print{
+ header,aside,.toolbar,.actions,footer,.no-print{display:none!important}
+ .layout{display:block}main{padding:0}.panel,.card{box-shadow:none}
+}
+</style>
+</head>
+<body>
+
+<!--
+إعداد قاعدة البيانات:
+1) أنشئ مشروعاً في Supabase.
+2) افتح SQL Editor ونفّذ هذا النص:
+
+create table if not exists public.clinic_data (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  data jsonb not null default '{"patients":[],"appointments":[],"visits":[],"prescriptions":[],"invoices":[]}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.clinic_data enable row level security;
+
+create policy "Users can read own clinic data"
+on public.clinic_data for select
+to authenticated using (auth.uid() = user_id);
+
+create policy "Users can insert own clinic data"
+on public.clinic_data for insert
+to authenticated with check (auth.uid() = user_id);
+
+create policy "Users can update own clinic data"
+on public.clinic_data for update
+to authenticated using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+3) ضع رابط مشروع Supabase ومفتاح publishable/anon أدناه.
+لا تضع مفتاح service_role في هذا الملف.
+-->
+
+<section id="loginScreen">
+ <div class="login-card">
+  <div class="logo">⚕️</div>
+  <h1 style="text-align:center;color:#123047">عيادة الأمان للشفاء الطبي</h1>
+  <p class="muted" style="text-align:center">نظام إدارة العيادة الطبية</p>
+  <form id="loginForm">
+   <label>البريد الإلكتروني
+    <input type="email" id="email" required autocomplete="username" placeholder="name@example.com">
+   </label>
+   <label>كلمة المرور
+    <input type="password" id="password" required minlength="6" autocomplete="current-password" placeholder="أدخل كلمة المرور">
+   </label>
+   <button style="width:100%" id="loginBtn" type="submit">تسجيل الدخول</button>
+  </form>
+  <button id="signupBtn" style="width:100%;margin-top:10px;background:#64748b">إنشاء حساب جديد</button>
+  <p class="muted">يلزم إعداد Supabase أولاً لتفعيل تسجيل الدخول والمزامنة السحابية.</p>
+  <div id="loginMessage"></div>
+ </div>
+</section>
+
+<div id="app" class="hidden">
+ <header>
+  <div>
+   <h2>⚕️ عيادة الأمان للشفاء الطبي</h2>
+   <div class="small" style="color:#d8e8ef">نظام إدارة العيادة</div>
+  </div>
+  <button id="logoutBtn" class="secondary">تسجيل الخروج</button>
+ </header>
+ <div class="layout">
+  <aside>
+   <nav id="navigation">
+    <button class="active" data-page="dashboard">🏠 لوحة التحكم</button>
+    <button data-page="patients">👥 المرضى</button>
+    <button data-page="appointments">📅 المواعيد</button>
+    <button data-page="visits">🩺 الاستشارات</button>
+    <button data-page="prescriptions">💊 الوصفات</button>
+    <button data-page="invoices">🧾 الفواتير</button>
+    <button data-page="reports">📊 التقارير</button>
+   </nav>
+  </aside>
+  <main>
+   <div id="pageTitle"><h2>لوحة التحكم</h2></div>
+   <section id="dashboardPage">
+    <div class="cards">
+     <div class="card">عدد المرضى<div class="stat" id="statPatients">0</div></div>
+     <div class="card">المواعيد<div class="stat" id="statAppointments">0</div></div>
+     <div class="card">الاستشارات<div class="stat" id="statVisits">0</div></div>
+     <div class="card">الفواتير<div class="stat" id="statInvoices">0</div></div>
+    </div>
+    <div class="panel">
+     <h3>مرحباً بك في نظام العيادة</h3>
+     <p class="muted">يمكنك إدارة بيانات المرضى ومواعيدهم واستشاراتهم ووصفاتهم وفواتيرهم من القائمة الجانبية.</p>
+     <p class="muted">احرص على حماية بيانات المرضى وعدم مشاركة كلمة المرور.</p>
+    </div>
+   </section>
+
+   <section id="recordsPage" class="hidden">
+    <div class="toolbar">
+     <input id="searchInput" placeholder="ابحث في السجلات...">
+     <button id="addBtn">＋ إضافة سجل</button>
+     <button id="exportBtn" class="secondary">تصدير CSV</button>
+    </div>
+    <div class="table-wrap">
+     <table>
+      <thead id="tableHead"></thead>
+      <tbody id="tableBody"></tbody>
+     </table>
+    </div>
+   </section>
+
+   <section id="formPage" class="hidden">
+    <div class="panel">
+     <h3 id="formTitle">إضافة سجل</h3>
+     <form id="recordForm">
+      <div id="formFields" class="form-grid"></div>
+      <div class="toolbar" style="margin-top:15px">
+       <button type="submit">حفظ السجل</button>
+       <button type="button" id="cancelForm" class="secondary">إلغاء</button>
+      </div>
+      <div id="formMessage"></div>
+     </form>
+    </div>
+   </section>
+
+   <section id="reportsPage" class="hidden">
+    <div class="cards">
+     <div class="card">إجمالي الفواتير<div class="stat" id="totalInvoices">0</div></div>
+     <div class="card">الفواتير المدفوعة<div class="stat" id="paidInvoices">0</div></div>
+     <div class="card">المبالغ المتبقية<div class="stat" id="remainingInvoices">0</div></div>
+    </div>
+    <div class="panel">
+     <h3>تقرير مختصر</h3>
+     <p id="reportText" class="muted"></p>
+     <button onclick="window.print()">طباعة التقرير</button>
+    </div>
+   </section>
+   <footer>عيادة الأمان للشفاء الطبي — احمِ بيانات المرضى واحتفظ بنسخة احتياطية آمنة.</footer>
+  </main>
+ </div>
+</div>
+
+<script>
+'use strict';
+
+/* أدخل بيانات مشروعك من Supabase هنا */
+const SUPABASE_URL = 'ضع_رابط_مشروعك_هنا';
+const SUPABASE_ANON_KEY = 'ضع_مفتاح_publishable_او_anon_هنا';
+
+const CONFIGURED =
+ SUPABASE_URL.startsWith('https://') &&
+ !SUPABASE_URL.includes('ضع_') &&
+ SUPABASE_ANON_KEY.length > 20 &&
+ !SUPABASE_ANON_KEY.includes('ضع_');
+
+let db = null;
+let currentUser = null;
+let currentPage = 'dashboard';
+let editingId = null;
+let clinic = emptyData();
+
+function emptyData(){
+ return {patients:[],appointments:[],visits:[],prescriptions:[],invoices:[]};
+}
+
+const definitions = {
+ patients:{
+  title:'المرضى',
+  fields:[
+   ['name','الاسم الكامل','text',true],
+   ['phone','رقم الهاتف','tel'],
+   ['birthDate','تاريخ الميلاد','date'],
+   ['gender','الجنس','select',false,['ذكر','أنثى']],
+   ['address','العنوان','text'],
+   ['notes','ملاحظات','textarea']
+  ],
+  columns:[['name','الاسم'],['phone','الهاتف'],['birthDate','تاريخ الميلاد'],['gender','الجنس'],['address','العنوان']]
+ },
+ appointments:{
+  title:'المواعيد',
+  fields:[
+   ['patientId','المريض','patient',true],
+   ['appointmentAt','تاريخ ووقت الموعد','datetime-local',true],
+   ['status','الحالة','select',false,['مجدول','تم','ملغى']],
+   ['reason','سبب الموعد','text'],
+   ['notes','ملاحظات','textarea']
+  ],
+  columns:[['patientId','المريض'],['appointmentAt','الموعد'],['status','الحالة'],['reason','السبب']]
+ },
+ visits:{
+  title:'الاستشارات الطبية',
+  fields:[
+   ['patientId','المريض','patient',true],
+   ['visitDate','تاريخ الاستشارة','date',true],
+   ['symptoms','الأعراض','textarea'],
+   ['diagnosis','التشخيص','textarea'],
+   ['treatment','العلاج والتوصيات','textarea'],
+   ['notes','ملاحظات إضافية','textarea']
+  ],
+  columns:[['patientId','المريض'],['visitDate','التاريخ'],['symptoms','الأعراض'],['diagnosis','التشخيص']]
+ },
+ prescriptions:{
+  title:'الوصفات الطبية',
+  fields:[
+   ['patientId','المريض','patient',true],
+   ['prescriptionDate','تاريخ الوصفة','date',true],
+   ['medications','الأدوية والجرعات','textarea',true],
+   ['instructions','تعليمات الاستعمال','textarea'],
+   ['doctor','اسم الطبيب','text']
+  ],
+  columns:[['patientId','المريض'],['prescriptionDate','التاريخ'],['medications','الأدوية'],['doctor','الطبيب']]
+ },
+ invoices:{
+  title:'الفواتير',
+  fields:[
+   ['patientId','المريض','patient',true],
+   ['invoiceDate','تاريخ الفاتورة','date',true],
+   ['description','الخدمة','text',true],
+   ['amount','المبلغ بالدينار الجزائري','number',true],
+   ['status','حالة الدفع','select',false,['غير مدفوعة','مدفوعة','مدفوعة جزئياً']],
+   ['notes','ملاحظات','textarea']
+  ],
+  columns:[['patientId','المريض'],['invoiceDate','التاريخ'],['description','الخدمة'],['amount','المبلغ'],['status','حالة الدفع']]
+ }
+};
+
+function setMessage(element,text,good=false){
+ element.textContent=text;
+ element.className=good?'good':'bad';
+}
+
+function showLoginMessage(text,good=false){
+ setMessage(document.getElementById('loginMessage'),text,good);
+}
+
+function escapeHTML(value){
+ return String(value??'').replace(/[&<>"']/g,ch=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+ }[ch]));
+}
+
+function patientName(id){
+ const p=clinic.patients.find(x=>x.id===id);
+ return p?p.name:'مريض محذوف';
+}
+
+function displayValue(key,value){
+ if(key==='patientId') return patientName(value);
+ if(value===null||value===undefined) return '';
+ return String(value);
+}
+
+async function start(){
+ if(!CONFIGURED){
+  showLoginMessage('أدخل رابط مشروع Supabase ومفتاحه في الكود أولاً.');
+  return;
+ }
+ db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+ const {data,error}=await db.auth.getSession();
+ if(error){showLoginMessage('تعذر التحقق من الجلسة: '+error.message);return;}
+ if(data.session){
+  currentUser=data.session.user;
+  await enterApp();
+ }
+}
+
+document.getElementById('loginForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ if(!CONFIGURED){
+  showLoginMessage('يجب إعداد رابط ومفتاح Supabase داخل الكود أولاً.');
+  return;
+ }
+ const btn=document.getElementById('loginBtn');
+ btn.disabled=true;
+ showLoginMessage('جارٍ تسجيل الدخول...',true);
+ const email=document.getElementById('email').value.trim();
+ const password=document.getElementById('password').value;
+ const {data,error}=await db.auth.signInWithPassword({email,password});
+ btn.disabled=false;
+ if(error){showLoginMessage('فشل تسجيل الدخول: '+error.message);return;}
+ currentUser=data.user;
+ await enterApp();
+});
+
+document.getElementById('signupBtn').addEventListener('click',async()=>{
+ if(!CONFIGURED){
+  showLoginMessage('أدخل بيانات Supabase في الكود أولاً.');
+  return;
+ }
+ const email=document.getElementById('email').value.trim();
+ const password=document.getElementById('password').value;
+ if(!email||password.length<6){
+  showLoginMessage('أدخل البريد الإلكتروني وكلمة مرور لا تقل عن 6 أحرف.');
+  return;
+ }
+ const {data,error}=await db.auth.signUp({email,password});
+ if(error){showLoginMessage('تعذر إنشاء الحساب: '+error.message);return;}
+ if(data.session&&data.user){
+  currentUser=data.user;
+  await enterApp();
+ }else{
+  showLoginMessage('تم إرسال طلب التسجيل. تحقق من بريدك الإلكتروني لتأكيد الحساب.',true);
+ }
+});
+
+document.getElementById('logoutBtn').addEventListener('click',async()=>{
+ if(db) await db.auth.signOut();
+ currentUser=null;
+ clinic=emptyData();
+ document.getElementById('app').classList.add('hidden');
+ document.getElementById('loginScreen').classList.remove('hidden');
+});
+
+async function enterApp(){
+ document.getElementById('loginScreen').classList.add('hidden');
+ document.getElementById('app').classList.remove('hidden');
+ const {data,error}=await db.from('clinic_data')
+  .select('data').eq('user_id',currentUser.id).maybeSingle();
+ if(error){
+  alert('تعذر تحميل البيانات. تأكد من إنشاء الجدول وسياسات RLS في Supabase.\n'+error.message);
+  return;
+ }
+ clinic=Object.assign(emptyData(),data?.data||{});
+ renderDashboard();
+ goPage('dashboard');
+}
+
+async function saveCloud(){
+ if(!currentUser||!db) throw new Error('يجب تسجيل الدخول أولاً.');
+ const {error}=await db.from('clinic_data').upsert({
+  user_id:currentUser.id,
+  data:clinic,
+  updated_at:new Date().toISOString()
+ },{onConflict:'user_id'});
+ if(error) throw error;
+}
+
+function renderDashboard(){
+ document.getElementById('statPatients').textContent=clinic.patients.length;
+ document.getElementById('statAppointments').textContent=clinic.appointments.length;
+ document.getElementById('statVisits').textContent=clinic.visits.length;
+ document.getElementById('statInvoices').textContent=clinic.invoices.length;
+ const total=clinic.invoices.reduce((s,x)=>s+(Number(x.amount)||0),0);
+ const paid=clinic.invoices.filter(x=>x.status==='مدفوعة').reduce((s,x)=>s+(Number(x.amount)||0),0);
+ document.getElementById('totalInvoices').textContent=total.toLocaleString('ar-DZ')+' دج';
+ document.getElementById('paidInvoices').textContent=paid.toLocaleString('ar-DZ')+' دج';
+ document.getElementById('remainingInvoices').textContent=(total-paid).toLocaleString('ar-DZ')+' دج';
+ document.getElementById('reportText').textContent=
+  `عدد المرضى: ${clinic.patients.length} — المواعيد: ${clinic.appointments.length} — الاستشارات: ${clinic.visits.length} — الوصفات: ${clinic.prescriptions.length} — الفواتير: ${clinic.invoices.length}.`;
+}
+
+function goPage(page){
+ currentPage=page;
+ document.querySelectorAll('#navigation button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+ ['dashboardPage','recordsPage','formPage','reportsPage'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+ document.getElementById('pageTitle').innerHTML='<h2>'+escapeHTML(page==='dashboard'?'لوحة التحكم':page==='reports'?'التقارير':definitions[page].title)+'</h2>';
+ if(page==='dashboard'){document.getElementById('dashboardPage').classList.remove('hidden');renderDashboard();}
+ else if(page==='reports'){document.getElementById('reportsPage').classList.remove('hidden');renderDashboard();}
+ else{document.getElementById('recordsPage').classList.remove('hidden');renderTable();}
+}
+
+document.getElementById('navigation').addEventListener('click',e=>{
+ const button=e.target.closest('button[data-page]');
+ if(button) goPage(button.dataset.page);
+});
+
+function renderTable(){
+ const def=definitions[currentPage];
+ const q=document.getElementById('searchInput').value.trim().toLowerCase();
+ document.getElementById('tableHead').innerHTML='<tr>'+
+  def.columns.map(c=>'<th>'+escapeHTML(c[1])+'</th>').join('')+'<th>الإجراءات</th></tr>';
+ const records=clinic[currentPage].filter(record=>
+  Object.values(record).some(v=>String(v??'').toLowerCase().includes(q))
+ );
+ document.getElementById('tableBody').innerHTML=records.map(record=>
+  '<tr>'+def.columns.map(c=>'<td>'+escapeHTML(displayValue(c[0],record[c[0]]))+'</td>').join('')+
+  '<td><div class="actions"><button data-edit="'+escapeHTML(record.id)+'">تعديل</button><button class="danger" data-delete="'+escapeHTML(record.id)+'">حذف</button><button class="secondary" data-print="'+escapeHTML(record.id)+'">طباعة</button></div></td></tr>'
+ ).join('')||'<tr><td colspan="'+(def.columns.length+1)+'">لا توجد سجلات حتى الآن</td></tr>';
+}
+
+document.getElementById('searchInput').addEventListener('input',renderTable);
+document.getElementById('addBtn').addEventListener('click',()=>openForm(null));
+document.getElementById('cancelForm').addEventListener('click',()=>goPage(currentPage));
+
+function openForm(id){
+ editingId=id;
+ const def=definitions[currentPage];
+ const record=id?clinic[currentPage].find(x=>x.id===id):{};
+ if(id&&!record){alert('لم يتم العثور على السجل.');return;}
+ document.getElementById('recordsPage').classList.add('hidden');
+ document.getElementById('formPage').classList.remove('hidden');
+ document.getElementById('formTitle').textContent=(id?'تعديل ':'إضافة ')+def.title;
+ document.getElementById('formMessage').textContent='';
+ document.getElementById('formFields').innerHTML=def.fields.map(f=>{
+  const [key,label,type='text',required=false,options=[]]=f;
+  const value=record[key]??'';
+  let control='';
+  if(type==='textarea'){
+   control=`<textarea name="${key}" ${required?'required':''}>${escapeHTML(value)}</textarea>`;
+  }else if(type==='select'){
+   control=`<select name="${key}"><option value="">اختر...</option>${options.map(o=>`<option ${o===value?'selected':''}>${escapeHTML(o)}</option>`).join('')}</select>`;
+  }else if(type==='patient'){
+   control=`<select name="${key}" required><option value="">اختر المريض...</option>${clinic.patients.map(p=>`<option value="${escapeHTML(p.id)}" ${p.id===value?'selected':''}>${escapeHTML(p.name)}</option>`).join('')}</select>`;
+  }else{
+   control=`<input type="${type}" name="${key}" value="${escapeHTML(value)}" ${required?'required':''} ${type==='number'?'min="0" step="0.01"':''}>`;
+  }
+  return `<label>${escapeHTML(label)}${required?' *':''}${control}</label>`;
+ }).join('');
+}
+
+document.getElementById('recordForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const form=e.currentTarget;
+ const def=definitions[currentPage];
+ const values={};
+ for(const f of def.fields){
+  const key=f[0];
+  const el=form.elements[key];
+  values[key]=el?el.value.trim():'';
+ }
+ if(currentPage==='invoices'&&Number(values.amount)<0){
+  setMessage(document.getElementById('formMessage'),'المبلغ لا يمكن أن يكون سالباً.');return;
+ }
+ const existing=editingId?clinic[currentPage].find(x=>x.id===editingId):null;
+ const record={...(existing||{}),...values,id:editingId||crypto.randomUUID(),updatedAt:new Date().toISOString()};
+ if(!editingId) record.createdAt=new Date().toISOString();
+ const index=clinic[currentPage].findIndex(x=>x.id===record.id);
+ if(index>=0) clinic[currentPage][index]=record;
+ else clinic[currentPage].push(record);
+ const saveBtn=form.querySelector('button[type="submit"]');
+ saveBtn.disabled=true;
+ try{
+  await saveCloud();
+  setMessage(document.getElementById('formMessage'),'تم حفظ السجل بنجاح.',true);
+  renderDashboard();
+  renderTable();
+  setTimeout(()=>goPage(currentPage),350);
+ }catch(err){
+  if(index>=0) clinic[currentPage][index]=existing;
+  else clinic[currentPage]=clinic[currentPage].filter(x=>x.id!==record.id);
+  setMessage(document.getElementById('formMessage'),'تعذر الحفظ في قاعدة البيانات: '+err.message);
+ }finally{saveBtn.disabled=false;}
+});
+
+document.getElementById('tableBody').addEventListener('click',async e=>{
+ const edit=e.target.closest('[data-edit]');
+ const del=e.target.closest('[data-delete]');
+ const print=e.target.closest('[data-print]');
+ if(edit){openForm(edit.dataset.edit);return;}
+ if(del){
+  const id=del.dataset.delete;
+  if(!confirm('هل تريد حذف هذا السجل نهائياً؟')) return;
+  const old=clinic[currentPage].slice();
+  clinic[currentPage]=clinic[currentPage].filter(x=>x.id!==id);
+  try{await saveCloud();renderTable();renderDashboard();}
+  catch(err){clinic[currentPage]=old;alert('تعذر الحذف: '+err.message);}
+  return;
+ }
+ if(print){
+  const record=clinic[currentPage].find(x=>x.id===print.dataset.print);
+  if(record) printRecord(currentPage,record);
+ }
+});
+
+function printRecord(page,record){
+ const def=definitions[page];
+ const rows=def.columns.map(c=>`<tr><th>${escapeHTML(c[1])}</th><td>${escapeHTML(displayValue(c[0],record[c[0]]))}</td></tr>`).join('');
+ const w=window.open('','_blank');
+ if(!w){alert('اسمح بالنوافذ المنبثقة للطباعة.');return;}
+ w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><meta charset="UTF-8"><title>${escapeHTML(def.title)}</title><style>body{font-family:Tahoma,Arial;padding:25px}h2{text-align:center}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:12px;text-align:right}</style><h2>عيادة الأمان للشفاء الطبي</h2><h3>${escapeHTML(def.title)}</h3><table>${rows}</table><p>التاريخ: ${new Date().toLocaleDateString('ar-DZ')}</p><script>window.onload=()=>window.print()<\/script></html>`);
+ w.document.close();
+}
+
+document.getElementById('exportBtn').addEventListener('click',()=>{
+ const def=definitions[currentPage];
+ const records=clinic[currentPage];
+ const csvCell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+ const lines=[def.columns.map(c=>csvCell(c[1])).join(',')];
+ records.forEach(r=>lines.push(def.columns.map(c=>csvCell(displayValue(c[0],r[c[0]]))).join(',')));
+ const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');
+ a.href=url;a.download=currentPage+'_'+new Date().toISOString().slice(0,10)+'.csv';
+ a.click();URL.revokeObjectURL(url);
+});
+
+start();
+</script>
+</body>
+</html>
